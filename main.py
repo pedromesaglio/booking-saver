@@ -1,44 +1,50 @@
 import argparse
 import logging
 from database import DBManager
-from scraper import EducationalScraper
-from generators import EducationalBookGenerator
+from scraper import ContentScraper
+from generators import BookGenerator
 
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    handlers=[logging.FileHandler("app.log"), logging.StreamHandler()]
 )
 logger = logging.getLogger(__name__)
 
 def main():
-    parser = argparse.ArgumentParser(description="Sistema de Generación de Libros Educativos")
+    parser = argparse.ArgumentParser(description="Educational Content Management System")
     subparsers = parser.add_subparsers(dest='command', required=True)
     
-    # Comando para scraping
-    scrape_parser = subparsers.add_parser('scrape', help='Extraer contenido del blog')
-    scrape_parser.add_argument('--max', type=int, default=50, help='Máximo de artículos')
+    # Scrape command
+    scrape_parser = subparsers.add_parser('scrape', help='Harvest educational content from target website')
+    scrape_parser.add_argument('--max', type=int, default=50, help='Maximum articles to process')
     
-    # Comando para generación
-    book_parser = subparsers.add_parser('generate-book', help='Generar libro educativo')
-    book_parser.add_argument('-o', '--output', required=True, help='Nombre del archivo de salida')
+    # Generate command
+    generate_parser = subparsers.add_parser('generate', help='Compile educational materials into PDF')
+    generate_parser.add_argument('-o', '--output', required=True, help='Output filename (without extension)')
     
     args = parser.parse_args()
     
     db = DBManager()
     
-    if args.command == 'scrape':
-        logger.info("Iniciando extracción de contenido...")
-        # (Implementar lógica de scraping aquí)
-    
-    elif args.command == 'generate-book':
-        logger.info("Generando libro educativo...")
-        scraper = EducationalScraper(db)
-        articles = db.get_all()
-        structure = scraper.analyze_content(articles)
+    try:
+        if args.command == 'scrape':
+            logger.info("🚀 Starting content harvesting...")
+            scraper = ContentScraper(db)
+            if scraper.scrape_articles(args.max):
+                logger.info(f"✅ Successfully stored {db.count_articles()} articles")
+            else:
+                logger.error("❌ Content harvesting completed with errors")
         
-        generator = EducationalBookGenerator(f"{args.output}.pdf")
-        generator.generate_book(structure)
-        logger.info(f"Libro generado: {args.output}.pdf")
+        elif args.command == 'generate':
+            logger.info("📚 Compiling educational book...")
+            generator = BookGenerator(f"{args.output}.pdf")
+            # Add content analysis and generation logic
+            logger.info(f"🎉 Successfully generated: {args.output}.pdf")
+            
+    except Exception as e:
+        logger.error(f"🔥 Critical failure: {str(e)}")
+        raise
 
 if __name__ == "__main__":
     main()

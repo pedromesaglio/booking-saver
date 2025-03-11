@@ -5,160 +5,173 @@ import logging
 import time
 import random
 import spacy
+import numpy as np
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.cluster import KMeans
-import numpy as np
-from transformers import pipeline
+from transformers import pipeline, AutoTokenizer
 from config import BASE_URL, SELECTORS, EDUCATIONAL_STRUCTURE, MAX_PAGES
 from database import DBManager
 
-# Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
-# Cargar modelos NLP
-try:
-    nlp = spacy.load("es_core_news_sm")
-except OSError:
-    logger.error("Modelo español de spaCy no encontrado. Ejecuta: python -m spacy download es_core_news_sm")
-    raise
+class ContentScraper:
+    def __init__(self, db_manager):
+        self.db = db_manager
+        self.session = self._configure_session()
+        self.nlp = self._load_spacy_model()
+        self.question_generator = self._init_question_generator()
+        self.content_analyzer = ContentAnalyzer()
 
-class BlogScraper:
-    def __init__(self, db: DBManager):
-        self.db = db
-        self.session = requests.Session()
-        self.session.headers.update({
+    def _configure_session(self):
+        session = requests.Session()
+        session.headers.update({
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept-Language": "es-ES,es;q=0.9"
         })
-        self.qg_pipeline = pipeline(
-            "text2text-generation",
-            model="mrm8488/t5-base-finetuned-question-generation-ap",
-            framework="pt"
-        )
+        return session
 
-    def extract_articles(self, max_articles=100):
-        """Extrae artículos del blog y los guarda en la base de datos"""
+    def _load_spacy_model(self):
         try:
-            urls = self._get_article_urls()
-            logger.info(f"Encontradas {len(urls)} URLs de artículos")
+            return spacy.load("es_core_news_sm")
+        except OSError:
+            logger.error("Spanish language model not found. Run: python -m spacy download es_core_news_sm")
+            raise
 
-            for i, url in enumerate(urls[:max_articles], 1):
-                if not self.db.get_by_url(url):
-                    article_data = self._process_article(url)
-                    if article_data:
-                        self.db.save_article(article_data)
-                        logger.debug(f"Artículo guardado: {article_data['title'][:50]}...")
-                    time.sleep(random.uniform(1, 3))  # Evitar bloqueos
-                logger.info(f"Progreso: {i}/{min(len(urls), max_articles)} artículos procesados")
+    def _init_question_generator(self):
+        try:
+            tokenizer = AutoTokenizer.from_pretrained(
+                "MarcBrun/questgen_es",
+                use_fast=False
+            )
+            return pipeline(
+                "text2text-generation",
+                model="MarcBrun/questgen_es",
+                tokenizer=tokenizer,
+                framework="pt"
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize question generator: {str(e)}")
+            raise
+
+    def scrape_articles(self, max_articles=100):
+        try:
+            article_urls = self._discover_articles()
+            logger.info(f"Found {len(article_urls)} potential articles")
+            
+            success_count = 0
+            for idx, url in enumerate(article_urls[:max_articles], 1):
+                if self._process_article(url):
+                    success_count += 1
+                self._random_delay()
+                
+                if idx % 10 == 0:
+                    logger.info(f"Progress: {idx}/{min(len(article_urls), max_articles)}")
+            
+            logger.info(f"Scraping complete. Saved {success_count} new articles")
             return True
         except Exception as e:
-            logger.error(f"Error en la extracción: {str(e)}")
+            logger.error(f"Scraping failed: {str(e)}")
             return False
 
-    def _get_article_urls(self):
-        """Obtiene URLs de todos los artículos paginados"""
+    def analyze_content(self):
+        """Analyze and structure scraped content for book generation"""
+        articles = self.db.get_all_articles()
+        return self.content_analyzer.structure_content(articles)
+
+    def _discover_articles(self):
         urls = []
         next_page_url = BASE_URL
-        page_count = 0
-
-        while page_count < MAX_PAGES and next_page_url:
+        pages_crawled = 0
+        
+        while pages_crawled < MAX_PAGES and next_page_url:
             try:
-                soup = self._get_soup(next_page_url)
+                soup = self._get_page_content(next_page_url)
                 if not soup:
                     break
-
-                # Extraer enlaces de artículos
-                article_links = soup.select(SELECTORS['articles'])
-                for article in article_links:
-                    link = article.select_one('a[href]')
-                    if link:
-                        absolute_url = urljoin(next_page_url, link['href'])
-                        urls.append(absolute_url)
-
-                # Manejar paginación
-                next_button = soup.select_one(SELECTORS['next_page'])
-                next_page_url = urljoin(next_page_url, next_button['href']) if next_button else None
-                page_count += 1
-
+                
+                urls.extend(self._extract_article_links(soup))
+                next_page_url = self._find_next_page(soup)
+                pages_crawled += 1
+            
             except Exception as e:
-                logger.error(f"Error en página {page_count}: {str(e)}")
+                logger.error(f"Error crawling page {pages_crawled}: {str(e)}")
                 break
-
-        return list(set(urls))  # Eliminar duplicados
+        
+        return list(set(urls))
 
     def _process_article(self, url):
-        """Procesa un artículo individual y devuelve datos estructurados"""
+        if self.db.article_exists(url):
+            logger.debug(f"Skipping existing article: {url}")
+            return False
+        
         try:
-            soup = self._get_soup(url)
+            soup = self._get_page_content(url)
             if not soup:
-                return None
-
-            # Extraer metadatos
-            title = self._clean_text(soup.select_one(SELECTORS['title']))
-            content = self._clean_text(soup.select_one(SELECTORS['content']))
-            date = soup.select_one(SELECTORS['date']).get('datetime', '')[:10] if soup.select_one(SELECTORS['date']) else ""
-
-            # Análisis semántico
-            doc = nlp(content)
-            entities = [ent.text for ent in doc.ents if ent.label_ in ['ORG', 'TEC', 'PLANT']]
+                return False
             
-            return {
-                'title': title,
-                'content': content,
-                'url': url,
-                'date': date,
-                'entities': entities,
-                'category': self._determine_category(content),
-                'difficulty': self._determine_difficulty(content)
-            }
+            article_data = self._parse_article_content(soup, url)
+            self.db.save_article(article_data)
+            return True
+            
         except Exception as e:
-            logger.error(f"Error procesando {url}: {str(e)}")
-            return None
+            logger.error(f"Error processing article: {url} - {str(e)}")
+            return False
 
-    def _determine_category(self, content):
-        """Clasifica el artículo en teoría/práctica/caso usando NLP"""
-        doc = nlp(content)
-        verb_counts = sum(1 for token in doc if token.pos_ == 'VERB')
-        if verb_counts > 10:
-            return 'practice'
-        elif any(sentiment in content.lower() for sentiment in ['recomendamos', 'sugerencia']):
-            return 'case_study'
-        return 'theory'
-
-    def _determine_difficulty(self, content):
-        """Determina el nivel de dificultad del contenido"""
-        word_count = len(content.split())
-        unique_terms = len(set(content.split()))
-        complexity_score = (unique_terms / word_count) * 100
-
-        if complexity_score < 30:
-            return 'basic'
-        elif complexity_score < 60:
-            return 'intermediate'
-        return 'advanced'
+    def _parse_article_content(self, soup, url):
+        content_element = soup.select_one(SELECTORS['content'])
+        return {
+            'title': self._clean_text(soup.select_one(SELECTORS['title'])),
+            'content': self._clean_text(content_element),
+            'url': url,
+            'date': self._extract_publish_date(soup),
+            'category': self._determine_category(content_element),
+            'level': self._determine_difficulty(content_element),
+            'chapter': None
+        }
 
     def _clean_text(self, element):
-        """Limpia y normaliza el texto HTML"""
-        if element:
-            # Eliminar scripts y estilos
-            for tag in element(['script', 'style', 'nav', 'footer']):
-                tag.decompose()
-            return ' '.join(element.stripped_strings)
-        return ""
+        if not element:
+            return ""
+        for tag in element(['script', 'style', 'nav', 'footer']):
+            tag.decompose()
+        return ' '.join(element.stripped_strings).strip()
 
-    def _get_soup(self, url):
-        """Obtiene el objeto BeautifulSoup con manejo de errores"""
+    def _extract_publish_date(self, soup):
+        date_element = soup.select_one(SELECTORS['date'])
+        return date_element.get('datetime', '')[:10] if date_element else ""
+
+    def _determine_category(self, content_element):
+        content = self._clean_text(content_element)
+        doc = self.nlp(content)
+        imperative_verbs = sum(1 for token in doc if token.tag_ == 'Verb__Mood=Imp|Number=Sing|Person=2')
+        return 'practice' if imperative_verbs > 3 else 'theory'
+
+    def _determine_difficulty(self, content_element):
+        content = self._clean_text(content_element)
+        words = content.split()
+        unique_terms = len(set(words))
+        complexity_score = (unique_terms / len(words)) * 100
+        return 'basic' if complexity_score < 30 else 'intermediate' if complexity_score < 60 else 'expert'
+
+    def _random_delay(self):
+        time.sleep(random.uniform(1.5, 4.0))
+
+    def _get_page_content(self, url):
         try:
             response = self.session.get(url, timeout=15)
             response.raise_for_status()
             return BeautifulSoup(response.text, 'html.parser')
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error HTTP en {url}: {type(e).__name__}")
+        except Exception as e:
+            logger.error(f"Failed to retrieve {url}: {str(e)}")
             return None
+
+    def _extract_article_links(self, soup):
+        return [urljoin(BASE_URL, a['href']) for article in soup.select(SELECTORS['articles']) 
+                if (a := article.select_one('a[href]'))]
+
+    def _find_next_page(self, soup):
+        next_btn = soup.select_one(SELECTORS['next_page'])
+        return urljoin(BASE_URL, next_btn['href']) if next_btn else None
 
 class ContentAnalyzer:
     def __init__(self):
@@ -167,115 +180,119 @@ class ContentAnalyzer:
             stop_words='spanish',
             ngram_range=(1, 2)
         )
-        self.kmeans = KMeans(
-            n_clusters=len(EDUCATIONAL_STRUCTURE['learning_levels']),
+        self.clusterer = KMeans(
+            n_clusters=5,  # 5 main topics
             random_state=42,
             n_init=10
         )
 
-    def analyze_content(self, articles):
-        """Organiza el contenido para estructura educativa"""
+    def structure_content(self, articles):
+        """Organize content into educational structure"""
         try:
-            # 1. Análisis de temas principales
-            main_topics = self._extract_main_topics(articles)
+            # Cluster articles into main topics
+            topics = self._extract_main_topics(articles)
             
-            # 2. Organización del contenido
             book_structure = {}
-            for topic in main_topics:
+            for topic in topics:
                 book_structure[topic] = {
                     'theory': [],
                     'practice': [],
-                    'case_studies': [],
-                    'quizzes': self._generate_quizzes(topic)
+                    'case_study': [],
+                    'quizzes': self._generate_chapter_quizzes(topic)
                 }
-                self._fill_chapter_content(book_structure[topic], articles, topic)
+                self._categorize_articles(book_structure[topic], articles, topic)
             
             return book_structure
         except Exception as e:
-            logger.error(f"Error en análisis de contenido: {str(e)}")
+            logger.error(f"Content analysis failed: {str(e)}")
             return {}
 
     def _extract_main_topics(self, articles):
-        """Identifica los 5 temas principales usando TF-IDF"""
-        texts = [f"{art['title']} {art['content']}" for art in articles]
+        """Identify main topics using TF-IDF and clustering"""
+        texts = [f"{art.title} {art.content}" for art in articles]
         tfidf_matrix = self.vectorizer.fit_transform(texts)
-        self.kmeans.fit(tfidf_matrix)
+        self.clusterer.fit(tfidf_matrix)
         
-        # Obtener términos más importantes por cluster
+        # Get top terms for each cluster
         terms = self.vectorizer.get_feature_names_out()
         topics = []
-        for i in range(self.kmeans.n_clusters):
-            centroid = self.kmeans.cluster_centers_[i]
-            top_terms = terms[np.argsort(centroid)[::-1][:5]]
+        for i in range(self.clusterer.n_clusters):
+            centroid = self.clusterer.cluster_centers_[i]
+            top_terms = terms[np.argsort(centroid)[::-1][:3]]
             topics.append(", ".join(top_terms))
         
-        return list(set(topics))[:5]
+        return topics
 
-    def _fill_chapter_content(self, chapter, articles, topic):
-        """Clasifica el contenido en secciones del capítulo"""
+    def _categorize_articles(self, chapter, articles, topic):
+        """Categorize articles into chapter sections"""
         for art in articles:
-            if topic.lower() in art['content'].lower():
-                if art['category'] == 'theory':
+            if topic.lower() in art.content.lower():
+                if art.category == 'theory':
                     chapter['theory'].append(self._format_theory(art))
-                elif art['category'] == 'practice':
+                elif art.category == 'practice':
                     chapter['practice'].append(self._format_practice(art))
                 else:
-                    chapter['case_studies'].append(self._format_case_study(art))
+                    chapter['case_study'].append(self._format_case_study(art))
 
-    def _generate_quizzes(self, topic):
-        """Genera preguntas de autoevaluación usando IA"""
+    def _generate_chapter_quizzes(self, topic):
+        """Generate assessment questions for each chapter"""
         try:
             return [{
                 'question': self._generate_question(topic),
-                'answer_hint': f"Revisar sección de {topic} en el capítulo 3"
+                'answer_hint': f"Review section: {topic}"
             } for _ in range(EDUCATIONAL_STRUCTURE['assessment']['questions_per_chapter'])]
         except Exception as e:
-            logger.error(f"Error generando preguntas: {str(e)}")
+            logger.error(f"Quiz generation failed: {str(e)}")
             return []
 
     def _generate_question(self, text):
-        """Genera una pregunta educativa usando transformers"""
-        return self.qg_pipeline(
+        """Generate educational question using AI"""
+        return self.question_generator(
             f"generar pregunta sobre: {text[:500]}",
             max_length=100,
             num_return_sequences=1
         )[0]['generated_text']
 
     def _format_theory(self, article):
-        """Da formato al contenido teórico"""
+        """Format theoretical content"""
         return {
-            'title': article['title'],
-            'content': article['content'][:1000] + "...",
-            'key_concepts': article['entities'][:5]
+            'title': article.title,
+            'content': article.content[:1000] + "...",
+            'key_concepts': self._extract_entities(article.content)
         }
 
     def _format_practice(self, article):
-        """Da formato al contenido práctico"""
+        """Format practical content"""
         return {
-            'title': article['title'],
-            'steps': self._extract_steps(article['content']),
-            'materials': self._extract_materials(article['content'])
+            'title': article.title,
+            'steps': self._extract_steps(article.content),
+            'materials': self._extract_materials(article.content)
         }
 
     def _format_case_study(self, article):
-        """Da formato a casos de estudio"""
+        """Format case study content"""
         return {
-            'title': article['title'],
-            'context': article['content'][:500],
-            'results': self._extract_results(article['content'])
+            'title': article.title,
+            'context': article.content[:500],
+            'results': self._extract_results(article.content)
         }
 
-    def _extract_steps(self, content):
-        """Extrae pasos de un artículo práctico"""
-        doc = nlp(content)
+    def _extract_entities(self, text):
+        """Extract key entities from text"""
+        doc = self.nlp(text)
+        return [ent.text for ent in doc.ents if ent.label_ in ['ORG', 'TEC', 'PLANT']][:5]
+
+    def _extract_steps(self, text):
+        """Extract procedural steps"""
+        doc = self.nlp(text)
         return [sent.text for sent in doc.sents if "paso" in sent.text.lower()][:5]
 
-    def _extract_materials(self, content):
-        """Extrae materiales mencionados"""
-        doc = nlp(content)
+    def _extract_materials(self, text):
+        """Extract mentioned materials"""
+        doc = self.nlp(text)
         return [ent.text for ent in doc.ents if ent.label_ == 'PRODUCT']
 
-    def _extract_results(self, content):
-        """Extrae resultados numéricos de casos"""
-        doc = nlp(content)
+    def _extract_results(self, text):
+        """Extract numerical results"""
+        doc = self.nlp(text)
         return [ent.text for ent in doc.ents if ent.label_ == 'PERCENT']
