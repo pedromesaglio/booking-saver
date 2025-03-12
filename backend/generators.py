@@ -5,7 +5,7 @@ from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, PageBreak, 
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 from reportlab.lib.units import mm
-from config import EDUCATIONAL_STRUCTURE
+from backend.config import EDUCATIONAL_STRUCTURE
 
 logger = logging.getLogger(__name__)
 

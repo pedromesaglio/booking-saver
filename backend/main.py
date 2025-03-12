@@ -3,10 +3,10 @@ import logging
 import subprocess
 import sys
 import platform
-from database import DBManager
-from scraper import ContentScraper
-from generators import BookGenerator
-from organizers import ContentOrganizer
+from backend.database import DBManager
+from backend.scraper import ContentScraper
+from backend.generators import BookGenerator
+from backend.organizers import ContentOrganizer
 
 logging.basicConfig(
     level=logging.INFO,

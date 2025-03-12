@@ -6,8 +6,8 @@ import time
 import random
 import spacy
 from transformers import pipeline, AutoTokenizer
-from config import BASE_URL, SELECTORS, MAX_PAGES
-from database import DBManager
+from backend.config import BASE_URL, SELECTORS, MAX_PAGES
+from backend.database import DBManager
 
 logger = logging.getLogger(__name__)
 

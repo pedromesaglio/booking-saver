@@ -1,4 +1,4 @@
-from database import DBManager, Article
+from backend.database import DBManager, Article
 import logging
 
 logging.basicConfig(level=logging.INFO)

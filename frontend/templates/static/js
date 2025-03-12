@@ -1,0 +1,92 @@
+document.addEventListener('DOMContentLoaded', () => {
+    const form = document.getElementById('generateForm');
+    const status = document.getElementById('status');
+    const progressBar = document.createElement('div');
+    
+    // Configurar barra de progreso
+    progressBar.className = 'progress-bar fade-in';
+    progressBar.innerHTML = '<div class="progress-fill"></div>';
+    
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const urlInput = document.getElementById('blogUrl');
+        const downloadSection = document.getElementById('downloadSection');
+        
+        // Resetear estado
+        urlInput.disabled = true;
+        downloadSection.style.display = 'none';
+        status.innerHTML = '';
+        status.appendChild(progressBar);
+        progressBar.style.display = 'block';
+        document.querySelector('.progress-fill').style.width = '0%';
+        
+        try {
+            // Simular progreso inicial
+            updateProgress(30, 1000);
+            
+            const response = await fetch('/generate', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({ url: urlInput.value })
+            });
+            
+            // Simular progreso durante la respuesta
+            updateProgress(70, 500);
+            
+            const data = await response.json();
+            
+            if (!response.ok) throw new Error(data.error || 'Error desconocido');
+            
+            // Progreso completo
+            updateProgress(100, 300);
+            
+            // Mostrar resultado
+            setTimeout(() => {
+                status.innerHTML = `
+                    <div class="alert alert-success fade-in">
+                        <i class="bi bi-check-circle-fill"></i>
+                        ¡Libro generado con éxito!
+                    </div>
+                `;
+                
+                const downloadLink = document.getElementById('downloadLink');
+                downloadLink.href = data.download_url;
+                downloadLink.download = data.filename;
+                downloadSection.style.display = 'block';
+                downloadSection.classList.add('fade-in');
+            }, 500);
+            
+        } catch (error) {
+            status.innerHTML = `
+                <div class="alert alert-danger fade-in">
+                    <i class="bi bi-x-circle-fill"></i>
+                    ${error.message}
+                </div>
+            `;
+        } finally {
+            urlInput.disabled = false;
+            progressBar.style.display = 'none';
+        }
+    });
+    
+    // Validación en tiempo real
+    document.getElementById('blogUrl').addEventListener('input', function(e) {
+        this.setCustomValidity(
+            this.validity.typeMismatch ? 'Por favor ingresa una URL válida' : ''
+        );
+    });
+    
+    // Animación de la barra de progreso
+    function updateProgress(percentage, duration) {
+        const progressFill = document.querySelector('.progress-fill');
+        progressFill.style.transition = `width ${duration}ms ease-out`;
+        progressFill.style.width = `${percentage}%`;
+    }
+    
+    // Efecto parallax
+    window.addEventListener('scroll', () => {
+        const hero = document.querySelector('.hero-section');
+        const scrolled = window.pageYOffset;
+        hero.style.backgroundPositionY = `${scrolled * 0.5}px`;
+    });
+});
