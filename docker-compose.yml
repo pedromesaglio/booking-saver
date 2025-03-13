@@ -1,0 +1,18 @@
+version: '3.8'
+
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - .:/app
+      - static_volume:/app/frontend/static
+      - database_volume:/app/backend/user_dbs
+    env_file:
+      - .env
+    restart: unless-stopped
+
+volumes:
+  static_volume:
+  database_volume:

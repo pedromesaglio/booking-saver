@@ -3,95 +3,100 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Generador de Libros Educativos</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-    <style>
-        .hero-section {
-            background: linear-gradient(45deg, #2A5D34, #5B8F68);
-            color: white;
-            padding: 4rem 0;
-            margin-bottom: 3rem;
-        }
-        .features {
-            padding: 3rem 0;
-        }
-    </style>
+    <title>BookGenerator - Transforma Blogs en Libros</title>
+    <meta name="description" content="Convierte cualquier blog en un libro profesional en formato PDF">
+    
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://tudominio.com">
+    <meta property="og:title" content="BookGenerator - Transforma Blogs en Libros">
+    <meta property="og:description" content="Convierte cualquier blog en un libro profesional en formato PDF">
+    <meta property="og:image" content="{{ url_for('static', filename='images/og-image.jpg') }}">
+
+    <!-- Twitter -->
+    <meta property="twitter:card" content="summary_large_image">
+    <meta property="twitter:url" content="https://tudominio.com">
+    <meta property="twitter:title" content="BookGenerator - Transforma Blogs en Libros">
+    <meta property="twitter:description" content="Convierte cualquier blog en un libro profesional en formato PDF">
+    <meta property="twitter:image" content="{{ url_for('static', filename='images/og-image.jpg') }}">
+
+    <!-- Estilos -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
 </head>
 <body>
-    <div class="hero-section text-center">
-        <div class="container">
-            <h1 class="display-4 mb-4">Transforma tu Blog en un Libro Educativo</h1>
-            <form id="generateForm" class="row g-3 justify-content-center">
-                <div class="col-md-6">
-                    <input type="url" class="form-control form-control-lg" 
-                           id="blogUrl" placeholder="https://tublog.com" required>
-                </div>
-                <div class="col-auto">
-                    <button type="submit" class="btn btn-light btn-lg">
-                        🚀 Generar Libro
+    <header class="hero-section">
+        <nav class="navbar">
+            <a href="/" class="navbar-brand">
+                <i class="bi bi-journal-bookmark-fill"></i>
+                BookGenerator
+            </a>
+        </nav>
+        
+        <div class="container hero-content">
+            <h1 class="display-heading">Transforma tu Blog en un Libro Profesional</h1>
+            <p class="lead-text">Convierte cualquier contenido web en un PDF estructurado y listo para imprimir</p>
+            
+            <form id="generateForm" class="generator-form">
+                <div class="input-group">
+                    <input type="url" 
+                           class="form-control-lg" 
+                           id="blogUrl"
+                           placeholder="https://ejemplo.com/blog"
+                           aria-label="URL del blog"
+                           required>
+                    <button type="submit" class="btn-primary">
+                        <i class="bi bi-magic"></i>
+                        Generar Libro
                     </button>
                 </div>
             </form>
         </div>
-    </div>
+    </header>
 
-    <div class="container features">
-        <div id="status"></div>
-        <div id="downloadSection" class="text-center" style="display: none;">
-            <a id="downloadLink" class="btn btn-success btn-lg mt-3">
-                📥 Descargar Libro
-            </a>
-        </div>
-    </div>
+    <main class="container">
+        <section id="status" class="loading-state"></section>
+        
+        <section id="downloadSection" class="download-container" hidden>
+            <div class="download-card">
+                <i class="bi bi-file-earmark-pdf-fill"></i>
+                <h2>¡Tu libro está listo!</h2>
+                <a id="downloadLink" class="btn-primary" download>
+                    <i class="bi bi-download"></i>
+                    Descargar PDF
+                </a>
+            </div>
+        </section>
 
-    <script>
-        document.getElementById('generateForm').addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const url = document.getElementById('blogUrl').value;
-            const status = document.getElementById('status');
-            const downloadSection = document.getElementById('downloadSection');
-            
-            status.innerHTML = `
-                <div class="alert alert-info d-flex align-items-center">
-                    <div class="spinner-border me-2" role="status"></div>
-                    Generando tu libro educativo...
-                </div>
-            `;
-            
-            try {
-                const response = await fetch('/generate', {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ url })
-                });
-                
-                const data = await response.json();
-                
-                if (data.error) {
-                    status.innerHTML = `
-                        <div class="alert alert-danger">
-                            ❌ Error: ${data.error}
-                        </div>
-                    `;
-                } else {
-                    status.innerHTML = `
-                        <div class="alert alert-success">
-                            ✅ ¡Libro generado con éxito!
-                        </div>
-                    `;
-                    const link = document.getElementById('downloadLink');
-                    link.href = data.download_url;
-                    link.download = data.filename;
-                    downloadSection.style.display = 'block';
-                }
-            } catch (error) {
-                status.innerHTML = `
-                    <div class="alert alert-danger">
-                        Error de conexión con el servidor
+        <section class="features-section">
+            <div class="features-grid">
+                <article class="feature-card">
+                    <div class="card-body">
+                        <i class="bi bi-lightning-charge-fill"></i>
+                        <h3>Generación Rápida</h3>
+                        <p>Procesamos tu contenido en menos de 2 minutos</p>
                     </div>
-                `;
-            }
-        });
-    </script>
+                </article>
+                
+                <article class="feature-card">
+                    <div class="card-body">
+                        <i class="bi bi-layout-text-window-reverse"></i>
+                        <h3>Estructura Automática</h3>
+                        <p>Organización inteligente en capítulos y secciones</p>
+                    </div>
+                </article>
+                
+                <article class="feature-card">
+                    <div class="card-body">
+                        <i class="bi bi-shield-check"></i>
+                        <h3>Seguro y Privado</h3>
+                        <p>Tu contenido nunca se almacena permanentemente</p>
+                    </div>
+                </article>
+            </div>
+        </section>
+    </main>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}"></script>
 </body>
 </html>
