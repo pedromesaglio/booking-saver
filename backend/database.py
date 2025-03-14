@@ -1,8 +1,8 @@
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Index, Enum, func
-from sqlalchemy.orm import declarative_base, sessionmaker
-from datetime import datetime
-import logging
+from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Index, Enum
+from sqlalchemy.orm import declarative_base, sessionmaker, scoped_session
+from sqlalchemy.exc import SQLAlchemyError
 import contextlib
+import logging
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()
@@ -24,68 +24,63 @@ class Article(Base):
     )
 
 class DBManager:
-    def __init__(self, db_name='education.db'):
-        self.engine = create_engine(f'sqlite:///{db_name}', connect_args={'timeout': 15})
-        Base.metadata.create_all(self.engine)
-        self.Session = sessionmaker(bind=self.engine)
+    def __init__(self, db_path):
+        self.db_path = db_path
+        self.engine = create_engine(f'sqlite:///{db_path}', connect_args={'timeout': 15})
+        self.Session = scoped_session(sessionmaker(bind=self.engine))
+        self._create_tables()
     
-    @contextlib.contextmanager
-    def session_scope(self):
-        session = self.Session()
+    def _create_tables(self):
         try:
-            yield session
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            logger.error(f"Error en transacción: {str(e)}")
+            Base.metadata.create_all(self.engine)
+            logger.info("Tablas creadas exitosamente")
+        except SQLAlchemyError as e:
+            logger.error(f"Error creando tablas: {str(e)}")
             raise
+    
+    def __enter__(self):
+        self.session = self.Session()
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if exc_type is not None:
+                self.session.rollback()
+            else:
+                self.session.commit()
+        except SQLAlchemyError as e:
+            logger.error(f"Error en transacción: {str(e)}")
+            self.session.rollback()
         finally:
-            session.close()
+            self.session.close()
+            self.Session.remove()
     
     def article_exists(self, url):
-        with self.session_scope() as session:
-            return session.query(Article).filter_by(url=url).first() is not None
+        return self.session.query(Article).filter_by(url=url).first() is not None
     
     def save_article(self, article_data):
         try:
-            with self.session_scope() as session:
-                title = article_data['title'][:500]
-                date = datetime.fromisoformat(article_data['date']) if article_data.get('date') else None
-                
-                article = Article(
-                    title=title,
-                    content=article_data['content'],
-                    url=article_data['url'],
-                    date=date,
-                    category=article_data.get('category'),
-                    level=article_data.get('level'),
-                    chapter=article_data.get('chapter')
-                )
-                session.add(article)
-                return True
+            article = Article(
+                title=article_data['title'][:500],
+                content=article_data['content'],
+                url=article_data['url'],
+                date=article_data.get('date'),
+                category=article_data.get('category'),
+                level=article_data.get('level'),
+                chapter=article_data.get('chapter')
+            )
+            self.session.add(article)
+            return True
         except Exception as e:
             logger.error(f"Error guardando artículo: {str(e)}")
             return False
     
     def get_all_articles(self):
-        with self.session_scope() as session:
-            articles = session.query(Article).all()
-            return [{
-                'id': art.id,
-                'title': art.title,
-                'content': art.content,
-                'url': art.url,
-                'date': art.date.isoformat() if art.date else None,
-                'category': art.category,
-                'level': art.level,
-                'chapter': art.chapter
-            } for art in articles]
+        try:
+            return self.session.query(Article).all()
+        except SQLAlchemyError as e:
+            logger.error(f"Error obteniendo artículos: {str(e)}")
+            return []
     
     def count_articles(self):
-        with self.session_scope() as session:
-            return session.query(Article).count()
-
-    def get_level_distribution(self):
-        with self.session_scope() as session:
-            result = session.query(Article.level, func.count(Article.level)).group_by(Article.level).all()
-            return {level: count for level, count in result}
+        return self.session.query(Article).count()

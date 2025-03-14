@@ -1,330 +1,199 @@
 import requests
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
+from datetime import datetime
 import logging
-import time
+from tqdm import tqdm
 import random
-import spacy
-from transformers import pipeline, AutoTokenizer
-from database import DBManager
-from config import SELECTORS, EDUCATIONAL_STRUCTURE, MAX_PAGES, BASE_URL
-import numpy as np
+import time
+from typing import List, Optional
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+
+from backend.config import SELECTORS
+from backend.database import DBManager
 
 logger = logging.getLogger(__name__)
 
-class ContentScraper:
-    def __init__(self, db_manager):
+class UniversalScraper:
+    def __init__(self, db_manager: DBManager, max_articles: int = 50):
         self.db = db_manager
-        self.base_url = None
-        self.session = self._create_session()
-        self.nlp = self._load_spacy_model()
-        self.question_generator = self._init_question_generator()
-        self.max_retries = 3
-        self.request_timeout = 20
-
-    def _create_session(self):
-        """Configura una sesión HTTP personalizada"""
-        session = requests.Session()
-        session.headers.update({
+        self.max_articles = max_articles
+        self.session = requests.Session()
+        self.driver = None  # Para Selenium
+        
+        # Configurar User-Agent realista
+        self.session.headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
             "Accept-Language": "es-ES,es;q=0.9",
-            "Referer": self.base_url or "https://google.com"
-        })
-        session.max_redirects = 3
-        return session
+        }
 
-    def _load_spacy_model(self):
-        """Carga el modelo de procesamiento de lenguaje en español"""
+    def _init_selenium(self):
+        """Inicializar Selenium como fallback"""
+        options = webdriver.ChromeOptions()
+        options.add_argument("--headless")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--no-sandbox")
+        self.driver = webdriver.Chrome(options=options)
+        self.driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
+    def _get_page(self, url: str) -> Optional[BeautifulSoup]:
+        """Obtener página con 3 estrategias diferentes"""
         try:
-            return spacy.load("es_core_news_sm")
-        except OSError:
-            logger.error("Modelo de español no encontrado. Ejecuta: python -m spacy download es_core_news_sm")
-            raise
-
-    def _init_question_generator(self):
-        """Configura el generador de preguntas de Hugging Face"""
-        try:
-            return pipeline(
-                "text2text-generation",
-                model="mrm8488/t5-base-finetuned-question-generation-ap",
-                tokenizer=AutoTokenizer.from_pretrained("mrm8488/t5-base-finetuned-question-generation-ap"),
-                device=-1,  # CPU
-                max_length=100
-            )
-        except Exception as e:
-            logger.error(f"Error inicializando generador de preguntas: {str(e)}")
-            return None
-
-    def scrape_articles(self, max_articles=50):
-        """Flujo principal de scraping para integración web"""
-        try:
-            article_urls = self._discover_articles()
-            logger.info(f"Descubiertas {len(article_urls)} URLs potenciales")
-            
-            success_count = 0
-            for idx, url in enumerate(article_urls[:max_articles], 1):
-                try:
-                    if not self.db.article_exists(url) and self._process_article(url):
-                        success_count += 1
-                    
-                    # Manejo de carga progresiva para web
-                    if idx % 5 == 0:
-                        logger.debug(f"Progreso: {idx}/{min(len(article_urls), max_articles)}")
-                    
-                    self._random_delay()
-                
-                except Exception as e:
-                    logger.error(f"Error procesando artículo {idx}: {str(e)}")
-                    continue
-            
-            logger.info(f"Scraping completado. Artículos nuevos: {success_count}")
-            return success_count > 0
-        
-        except Exception as e:
-            logger.error(f"Error general en scraping: {str(e)}")
-            return False
-
-    def _discover_articles(self):
-        """Descubre artículos con manejo mejorado de paginación"""
-        urls = []
-        next_page = self.base_url
-        parsed_base = urlparse(self.base_url)
-        
-        for _ in range(MAX_PAGES):
-            if not next_page:
-                break
-            
-            try:
-                soup = self._get_page_content(next_page)
-                if not soup:
-                    break
-                
-                # Filtrar URLs del mismo dominio
-                current_urls = [
-                    urljoin(self.base_url, a['href'])
-                    for article in soup.select(SELECTORS['articles'])
-                    if (a := article.select_one('a[href]')) 
-                    and self._is_same_domain(a['href'], parsed_base)
-                ]
-                
-                urls.extend(current_urls)
-                next_page = self._find_next_page(soup)
-            
-            except Exception as e:
-                logger.error(f"Error en página {next_page}: {str(e)}")
-                break
-        
-        return list(set(urls))
-
-    def _is_same_domain(self, url, parsed_base):
-        """Verifica si una URL pertenece al mismo dominio"""
-        parsed_url = urlparse(url)
-        return parsed_url.netloc == parsed_base.netloc or not parsed_url.netloc
-
-    def _process_article(self, url):
-        """Procesa un artículo individual con reintentos"""
-        for attempt in range(self.max_retries):
-            try:
-                soup = self._get_page_content(url)
-                if not soup:
-                    return False
-                
-                article_data = self._parse_article_content(soup, url)
-                return self.db.save_article(article_data)
-            
-            except Exception as e:
-                if attempt < self.max_retries - 1:
-                    wait_time = 2 ** attempt
-                    logger.warning(f"Reintentando ({attempt+1}/{self.max_retries}) en {wait_time}s...")
-                    time.sleep(wait_time)
-                else:
-                    logger.error(f"Fallo definitivo procesando {url}: {str(e)}")
-                    return False
-
-    def _parse_article_content(self, soup, url):
-        """Extrae y estructura el contenido del artículo con manejo de errores"""
-        try:
-            title = self._clean_text(soup.select_one(SELECTORS['title']))[:500] or "Sin título"
-            content = self._clean_text(soup.select_one(SELECTORS['content']))
-            
-            return {
-                'title': title,
-                'content': content,
-                'url': url,
-                'date': self._extract_publish_date(soup),
-                'category': self._determine_category(content),
-                'level': self._determine_difficulty(content),
-                'chapter': None
-            }
-        
-        except Exception as e:
-            logger.error(f"Error analizando contenido de {url}: {str(e)}")
-            return None
-
-    # ... (Métodos auxiliares restantes iguales pero con mejor logging)
-
-    def _get_page_content(self, url):
-        """Obtiene el contenido de una página con manejo de errores mejorado"""
-        try:
-            response = self.session.get(
-                url,
-                timeout=(self.request_timeout, 30),
-                allow_redirects=True
-            )
+            # Intento 1: Requests estándar
+            time.sleep(random.uniform(1, 3))
+            response = self.session.get(url, timeout=15)
             response.raise_for_status()
             
-            if len(response.text) < 2000:
-                logger.warning(f"Contenido insuficiente en {url}")
-                return None
-            
-            return BeautifulSoup(response.text, 'html.parser')
-        
-        except requests.exceptions.RequestException as e:
-            logger.warning(f"Error HTTP en {url}: {str(e)}")
-            return None
-
-    def _random_delay(self):
-        """Genera un retraso aleatorio más seguro para web scraping"""
-        delay = random.uniform(1.5, 4.0)
-        time.sleep(delay)
-    
-    def _get_page_content(self, url):
-        try:
-            response = self.session.get(url)
-            response.raise_for_status()
-            
-            if len(response.text) < 2000:
-                raise ValueError("Contenido insuficiente")
+            soup = BeautifulSoup(response.text, 'html.parser')
+            if len(soup.find_all(SELECTORS['articles'][0])) > 0:
+                return soup
                 
-            return BeautifulSoup(response.text, 'html.parser')
+            # Intento 2: Requests con User-Agent diferente
+            self.session.headers["User-Agent"] = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Safari/605.1.15"
+            response = self.session.get(url, timeout=15)
+            soup = BeautifulSoup(response.text, 'html.parser')
+            if len(soup.find_all(SELECTORS['articles'][0])) > 0:
+                return soup
+                
+            # Intento 3: Selenium para JavaScript
+            if not self.driver:
+                self._init_selenium()
+                
+            self.driver.get(url)
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, SELECTORS['articles'][0]))
+            )
+            return BeautifulSoup(self.driver.page_source, 'html.parser')
+            
         except Exception as e:
             logger.error(f"Error obteniendo {url}: {str(e)}")
             return None
-    
-    def _extract_article_links(self, soup):
-        return [
-            urljoin(BASE_URL, a['href'])
-            for article in soup.select(SELECTORS['articles'])
-            if (a := article.select_one('a[href]'))
-        ]
-    
-    def _find_next_page(self, soup):
-        next_btn = soup.select_one(SELECTORS['next_page'])
-        return urljoin(BASE_URL, next_btn['href']) if next_btn else None
 
-class ContentAnalyzer:
-    def __init__(self, scraper):
-        self.scraper = scraper
-        self.vectorizer = TfidfVectorizer(
-            max_features=1000,
-            stop_words='spanish',
-            ngram_range=(1, 2)
-        )
-        self.clusterer = KMeans(
-            n_clusters=5,  # 5 temas principales
-            random_state=42,
-            n_init=10
-        )
-    
-    def structure_content(self, articles):
+    def _extract_links(self, soup: BeautifulSoup, base_url: str) -> List[str]:
+        """Extraer enlaces con múltiples estrategias"""
+        links = []
+        
+        # Estrategia 1: Selectores configurados
+        for selector in SELECTORS['articles']:
+            articles = soup.select(selector)
+            for article in articles:
+                link = None
+                for link_selector in SELECTORS['article_link']:
+                    elem = article.select_one(link_selector)
+                    if elem and (href := elem.get('href')):
+                        link = urljoin(base_url, href)
+                        break
+                if link and link not in links:
+                    links.append(link)
+            if links:
+                break
+        
+        # Estrategia 2: Buscar enlaces comunes en el cuerpo
+        if not links:
+            for link_selector in SELECTORS['article_link']:
+                links = [urljoin(base_url, a['href']) for a in soup.select(link_selector)]
+                if links:
+                    break
+        
+        return list(dict.fromkeys(links))[:self.max_articles]
+
+    def _parse_article(self, url: str) -> Optional[dict]:
+        """Parseo con tolerancia a fallos"""
         try:
-            topics = self._extract_main_topics(articles)
-            book_structure = {}
+            soup = self._get_page(url)
+            if not soup:
+                return None
+
+            # Título con 3 métodos diferentes
+            title = None
+            for selector in SELECTORS['title']:
+                if elem := soup.select_one(selector):
+                    title = elem.text.strip()
+                    break
+
+            # Contenido con 3 métodos
+            content = None
+            for selector in SELECTORS['content']:
+                if elem := soup.select(selector):
+                    content = "\n".join([e.text.strip() for e in elem])
+                    break
+
+            # Fecha con múltiples formatos
+            date = None
+            for selector in SELECTORS['date']:
+                if elem := soup.select_one(selector):
+                    date_str = elem.text.strip()
+                    date = self._parse_date(date_str)
+                    if date:
+                        break
+
+            return {
+                'title': title or "Título no encontrado",
+                'content': content or "Contenido no disponible",
+                'url': url,
+                'date': date,
+                'category': self._detect_category(content or ""),
+                'level': self._detect_difficulty(content or "")
+            }
+        except Exception as e:
+            logger.error(f"Error procesando {url}: {str(e)}")
+            return None
+
+    def scrape(self, base_url: str) -> bool:
+        """Flujo principal de scraping mejorado"""
+        parsed_url = urlparse(base_url)
+        logger.info(f"🚀 Iniciando scraping en: {base_url}")
+        
+        try:
+            soup = self._get_page(base_url)
+            if not soup:
+                logger.error("❌ No se pudo obtener la página inicial")
+                return False
+
+            article_urls = []
+            next_page = base_url
+            max_depth = 5  # Límite de páginas
             
-            for topic in topics:
-                book_structure[topic] = {
-                    'theory': [],
-                    'practice': [],
-                    'case_study': [],
-                    'quizzes': self._generate_chapter_quizzes(topic)
-                }
-                self._categorize_articles(book_structure[topic], articles, topic)
-            
-            return book_structure
+            with tqdm(desc="🔍 Buscando artículos", unit="pág") as pbar:
+                while next_page and len(article_urls) < self.max_articles and max_depth > 0:
+                    current_soup = self._get_page(next_page) or soup
+                    new_links = self._extract_links(current_soup, base_url)
+                    article_urls.extend(new_links)
+                    
+                    # Paginación inteligente
+                    next_page = None
+                    for selector in SELECTORS['next_page']:
+                        if elem := current_soup.select_one(selector):
+                            next_page = urljoin(base_url, elem.get('href', ''))
+                            break
+                    
+                    max_depth -= 1
+                    pbar.update(1)
+                    time.sleep(random.uniform(1, 2))
+
+            # Procesamiento paralelo básico
+            success_count = 0
+            with tqdm(total=len(article_urls), desc="📥 Procesando artículos") as pbar:
+                for url in article_urls:
+                    if self.db.article_exists(url):
+                        pbar.update(1)
+                        continue
+                    
+                    article_data = self._parse_article(url)
+                    if article_data and self.db.save_article(article_data):
+                        success_count += 1
+                    pbar.update(1)
+                    time.sleep(random.uniform(0.5, 1.5))
+
+            logger.info(f"✅ Artículos nuevos guardados: {success_count}/{len(article_urls)}")
+            return success_count > 0
+
         except Exception as e:
-            logger.error(f"Error en análisis de contenido: {str(e)}")
-            return {}
-    
-    def _extract_main_topics(self, articles):
-        texts = [f"{art.title} {art.content}" for art in articles]
-        tfidf_matrix = self.vectorizer.fit_transform(texts)
-        self.clusterer.fit(tfidf_matrix)
-        
-        terms = self.vectorizer.get_feature_names_out()
-        topics = []
-        
-        for i in range(self.clusterer.n_clusters):
-            centroid = self.clusterer.cluster_centers_[i]
-            top_terms = terms[np.argsort(centroid)[::-1][:3]]
-            topics.append(", ".join(top_terms))
-        
-        return topics
-    
-    def _categorize_articles(self, chapter, articles, topic):
-        for art in articles:
-            if topic.lower() in art.content.lower():
-                if art.category == 'theory':
-                    chapter['theory'].append(self._format_theory(art))
-                elif art.category == 'practice':
-                    chapter['practice'].append(self._format_practice(art))
-                else:
-                    chapter['case_study'].append(self._format_case_study(art))
-    
-    def _generate_chapter_quizzes(self, topic):
-        try:
-            return [{
-                'question': self._generate_question(topic),
-                'answer_hint': f"Revisar sección: {topic}"
-            } for _ in range(EDUCATIONAL_STRUCTURE['assessment']['questions_per_chapter'])]
-        except Exception as e:
-            logger.error(f"Error generando preguntas: {str(e)}")
-            return []
-    
-    def _generate_question(self, text):
-        try:
-            result = self.scraper.question_generator(
-                f"generate question about: {text[:500]}",  # Instrucción en inglés
-                max_length=100,
-                num_return_sequences=1
-            )
-            return result[0]['generated_text']
-        except Exception as e:
-            logger.error(f"Error generando pregunta: {str(e)}")
-            return "¿Cuál es el aspecto más importante de este tema?"
-    
-    def _format_theory(self, article):
-        return {
-            'title': article.title,
-            'content': article.content[:1000] + "...",
-            'key_concepts': self._extract_entities(article.content)
-        }
-    
-    def _format_practice(self, article):
-        return {
-            'title': article.title,
-            'steps': self._extract_steps(article.content),
-            'materials': self._extract_materials(article.content)
-        }
-    
-    def _format_case_study(self, article):
-        return {
-            'title': article.title,
-            'context': article.content[:500],
-            'results': self._extract_results(article.content)
-        }
-    
-    def _extract_entities(self, text):
-        doc = self.scraper.nlp(text)
-        return [ent.text for ent in doc.ents if ent.label_ in ['ORG', 'TEC', 'PLANT']][:5]
-    
-    def _extract_steps(self, text):
-        doc = self.scraper.nlp(text)
-        return [sent.text for sent in doc.sents if "paso" in sent.text.lower()][:5]
-    
-    def _extract_materials(self, text):
-        doc = self.scraper.nlp(text)
-        return [ent.text for ent in doc.ents if ent.label_ == 'PRODUCT']
-    
-    def _extract_results(self, text):
-        doc = self.scraper.nlp(text)
-        return [ent.text for ent in doc.ents if ent.label_ == 'PERCENT']
+            logger.error(f"🔥 Error crítico: {str(e)}", exc_info=True)
+            return False
+        finally:
+            if self.driver:
+                self.driver.quit()
