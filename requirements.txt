@@ -12,7 +12,8 @@ tqdm==4.66.2
 spacy-transformers
 sentencepiece==0.2.0
 protobuf==3.20.3
-tokenizers 
+tokenizers
 gunicorn==21.2.0
 python-dotenv==1.0.0
 Flask==3.0.3
+selenium==4.10.0

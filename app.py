@@ -103,7 +103,7 @@ def generate_book():
         with DBManager(str(db_path)) as db:
             scraper = ContentScraper(db)
             
-            if not scraper.scrape_articles(blog_url):
+            if not scraper.scrape(blog_url):
                 return jsonify({'error': 'Error obteniendo contenido'}), 500
 
             articles = db.get_all_articles()

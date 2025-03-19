@@ -17,7 +17,7 @@ from backend.database import DBManager
 
 logger = logging.getLogger(__name__)
 
-class UniversalScraper:
+class ContentScraper:
     def __init__(self, db_manager: DBManager, max_articles: int = 50):
         self.db = db_manager
         self.max_articles = max_articles
