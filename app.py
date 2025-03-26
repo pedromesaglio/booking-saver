@@ -1,6 +1,7 @@
 import os
 import sys
 import logging
+import tempfile  # Importar módulo para directorios temporales
 from pathlib import Path
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, render_template, request
@@ -54,6 +55,15 @@ def setup_directories():
         try:
             os.makedirs(directory, exist_ok=True)
             logger.info(f"Directorio creado: {directory}")
+        except PermissionError as e:
+            if directory == Path(app.config['UPLOAD_FOLDER']):
+                # Usar un directorio temporal si no se puede crear el directorio de subida
+                temp_dir = tempfile.mkdtemp()
+                app.config['UPLOAD_FOLDER'] = temp_dir
+                logger.warning(f"Permiso denegado para {directory}. Usando directorio temporal: {temp_dir}")
+            else:
+                logger.critical(f"Permiso denegado al crear el directorio {directory}: {str(e)}")
+                raise
         except Exception as e:
             logger.error(f"Error creando directorio {directory}: {str(e)}")
             raise
@@ -75,6 +85,7 @@ def clean_old_files():
 # Rutas principales
 @app.route('/')
 def home():
+    # Renderizar el archivo index.html desde la carpeta templates
     return render_template('index.html')
 
 @app.route('/health')

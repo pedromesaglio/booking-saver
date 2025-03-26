@@ -1,10 +1,10 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
+import { Button } from "../components/ui/button"
 import { Bot, Menu } from "lucide-react"
 import { motion } from "framer-motion"
 import Link from "next/link"
-import type React from "react"
+import React from "react"
 
 export default function Navbar() {
   return (
@@ -19,10 +19,10 @@ export default function Navbar() {
       </Link>
 
       <div className="hidden md:flex items-center space-x-8">
-        <NavLink href="/features">Features</NavLink>
-        <NavLink href="/how-it-works">How it Works</NavLink>
-        <NavLink href="/examples">Examples</NavLink>
-        <NavLink href="/pricing">Pricing</NavLink>
+        <NavLink href="/features" children="Features" />
+        <NavLink href="/how-it-works" children="How it Works" />
+        <NavLink href="/examples" children="Examples" />
+        <NavLink href="/pricing" children="Pricing" />
       </div>
 
       <div className="hidden md:flex items-center space-x-4">
