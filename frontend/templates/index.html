@@ -4,7 +4,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Home</title>
-    <link rel="stylesheet" href="/static/css/styles.css">
+    <!-- Incluye estilos globales -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/globals.css') }}">
+    <!-- Incluye estilos específicos de components/ui -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/ui/styles.css') }}">
 </head>
 <body>
     <header>
@@ -12,10 +15,12 @@
     </header>
     <main>
         <p>Esta es una aplicación para gestionar tus reservas de manera eficiente.</p>
-        <button onclick="alert('¡Bienvenido!')">Haz clic aquí</button>
+        <button class="ui-button" onclick="alert('¡Bienvenido!')">Haz clic aquí</button>
     </main>
     <footer>
         <p>&copy; 2023 Booking App</p>
     </footer>
+    <!-- Incluye scripts específicos de components/ui -->
+    <script src="{{ url_for('static', filename='components/ui/scripts.js') }}"></script>
 </body>
 </html>

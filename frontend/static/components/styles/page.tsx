@@ -1,6 +1,7 @@
-import Hero from "@/components/hero"
-import Navbar from "@/components/navbar"
-import { SparklesCore } from "@/components/sparkles"
+import React from "react"
+import Hero from "../hero"
+import Navbar from "../navbar"
+import { SparklesCore } from "../../components/sparkles" // Updated the path to the correct location.
 
 export default function Home() {
   return (

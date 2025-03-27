@@ -22,6 +22,20 @@ app = Flask(__name__,
             static_folder=str(BASE_DIR / 'frontend/static'),
             template_folder=str(BASE_DIR / 'frontend/templates'))
 
+# Configurar logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler(BASE_DIR / 'app.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
+
+logger.info(f"Static folder: {app.static_folder}")
+logger.info(f"Template folder: {app.template_folder}")
+
 # Configuración de la aplicación
 app.config.update({
     'SECRET_KEY': os.getenv('SECRET_KEY', 'dev-key-123'),
@@ -85,8 +99,12 @@ def clean_old_files():
 # Rutas principales
 @app.route('/')
 def home():
-    # Renderizar el archivo index.html desde la carpeta templates
-    return render_template('index.html')
+    try:
+        # Renderizar el archivo index.html desde la carpeta templates
+        return render_template('index.html')
+    except Exception as e:
+        logger.error(f"Error cargando la plantilla index.html: {str(e)}")
+        return jsonify({'error': 'Error cargando la página principal'}), 500
 
 @app.route('/health')
 def health_check():
@@ -136,6 +154,15 @@ def generate_book():
     except Exception as e:
         logger.error(f"Error en generación: {str(e)}", exc_info=True)
         return jsonify({'error': 'Error interno del servidor'}), 500
+
+@app.route('/test-static')
+def test_static():
+    try:
+        # Ruta para verificar si los archivos estáticos se sirven correctamente
+        return app.send_static_file('components/styles/globals.css')
+    except Exception as e:
+        logger.error(f"Error sirviendo archivo estático: {str(e)}")
+        return jsonify({'error': 'Error cargando archivo estático'}), 500
 
 # Manejo de errores
 @app.errorhandler(400)

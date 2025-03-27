@@ -1,11 +1,11 @@
 "use client"
 
 import React from "react"
-import { Button } from "../components/ui/button"
+import { Button } from "./ui/button"
 import { motion } from "framer-motion"
 import { FileText, Sparkles } from "lucide-react"
 import { FloatingPaper } from "../components/floating-paper"
-import { RoboAnimation } from "../components/robo-animation"
+import { RoboAnimation } from "./robo-animation"
 
 export default function Hero() {
   return (
