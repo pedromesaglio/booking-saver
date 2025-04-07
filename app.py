@@ -45,17 +45,6 @@ app.config.update({
     'MAX_CONTENT_LENGTH': 15 * 1024 * 1024  # 15MB
 })
 
-# Configurar logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.FileHandler(BASE_DIR / 'app.log'),
-        logging.StreamHandler()
-    ]
-)
-logger = logging.getLogger(__name__)
-
 def setup_directories():
     """Crear directorios necesarios"""
     required_dirs = [
@@ -100,10 +89,10 @@ def clean_old_files():
 @app.route('/')
 def home():
     try:
-        # Renderizar el archivo index.html desde la carpeta templates
+        logger.info("Intentando cargar la plantilla index.html")
         return render_template('index.html')
     except Exception as e:
-        logger.error(f"Error cargando la plantilla index.html: {str(e)}")
+        logger.error(f"Error cargando la plantilla index.html: {str(e)}", exc_info=True)
         return jsonify({'error': 'Error cargando la página principal'}), 500
 
 @app.route('/health')
@@ -132,24 +121,29 @@ def generate_book():
         with DBManager(str(db_path)) as db:
             scraper = ContentScraper(db)
             
+            logger.info(f"🚀 Iniciando scraping en: {blog_url}")
             if not scraper.scrape(blog_url):
-                return jsonify({'error': 'Error obteniendo contenido'}), 500
+                logger.error("❌ Error durante el scraping. No se pudo obtener contenido.")
+                return jsonify({'error': 'No se encontraron artículos en el blog o el scraping falló.'}), 404
 
             articles = db.get_all_articles()
             if not articles:
-                return jsonify({'error': 'No se encontró contenido'}), 404
+                logger.warning("⚠️ No se encontraron artículos en el blog.")
+                return jsonify({'error': 'No se encontraron artículos en el blog proporcionado'}), 404
 
             organizer = ContentOrganizer(articles)
             book_structure = organizer.structure_content()
 
             generator = BookGenerator(str(output_file))
             if generator.generate_book(book_structure):
+                logger.info(f"✅ Libro generado exitosamente: {output_file}")
                 return jsonify({
                     'download_url': f"/static/books/book_{session_id}.pdf",
                     'filename': f'Libro_{datetime.now().strftime("%Y%m%d")}.pdf'
                 })
 
-        return jsonify({'error': 'Error generando PDF'}), 500
+        logger.error("❌ Error generando el libro PDF.")
+        return jsonify({'error': 'Error generando el libro PDF'}), 500
 
     except Exception as e:
         logger.error(f"Error en generación: {str(e)}", exc_info=True)
@@ -163,6 +157,25 @@ def test_static():
     except Exception as e:
         logger.error(f"Error sirviendo archivo estático: {str(e)}")
         return jsonify({'error': 'Error cargando archivo estático'}), 500
+
+@app.route('/test-template')
+def test_template():
+    """Ruta para verificar si las plantillas se están sirviendo correctamente"""
+    try:
+        return render_template('index.html')
+    except Exception as e:
+        logger.error(f"Error cargando la plantilla index.html: {str(e)}")
+        return jsonify({'error': 'Error cargando la plantilla'}), 500
+
+@app.route('/test-static/<path:filename>')
+def test_static_file(filename):
+    """Ruta para verificar si los archivos estáticos se están sirviendo correctamente"""
+    try:
+        logger.info(f"Sirviendo archivo estático: {filename}")
+        return app.send_static_file(filename)
+    except Exception as e:
+        logger.error(f"Error sirviendo archivo estático {filename}: {str(e)}")
+        return jsonify({'error': f'Error cargando archivo estático {filename}'}), 500
 
 # Manejo de errores
 @app.errorhandler(400)
@@ -183,11 +196,12 @@ if __name__ == '__main__':
         
         # Archivos para recarga automática
         extra_files = [
-            str(BASE_DIR / 'frontend/static/css/styles.css'),
+            str(BASE_DIR / 'frontend/static/components/styles/globals.css'),
             str(BASE_DIR / 'frontend/templates/index.html'),
             str(BASE_DIR / 'backend/config.py')
         ]
         
+        logger.info("Iniciando la aplicación en http://localhost:5001")
         app.run(
             host='0.0.0.0',
             port=5001,
@@ -196,5 +210,5 @@ if __name__ == '__main__':
             extra_files=extra_files
         )
     except Exception as e:
-        logger.critical(f"Error iniciando la aplicación: {str(e)}")
+        logger.critical(f"Error iniciando la aplicación: {str(e)}", exc_info=True)
         raise

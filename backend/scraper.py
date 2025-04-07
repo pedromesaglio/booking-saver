@@ -76,9 +76,10 @@ class ContentScraper:
         """Extraer enlaces con múltiples estrategias"""
         links = []
         
-        # Estrategia 1: Selectores configurados
+        # Probar múltiples selectores para encontrar artículos
         for selector in SELECTORS['articles']:
             articles = soup.select(selector)
+            logger.info(f"🔍 Probando selector de artículos: '{selector}' - Encontrados: {len(articles)}")
             for article in articles:
                 link = None
                 for link_selector in SELECTORS['article_link']:
@@ -89,46 +90,50 @@ class ContentScraper:
                 if link and link not in links:
                     links.append(link)
             if links:
-                break
+                break  # Detener si se encuentran enlaces válidos
         
-        # Estrategia 2: Buscar enlaces comunes en el cuerpo
+        # Si no se encuentran enlaces, probar selectores genéricos
         if not links:
             for link_selector in SELECTORS['article_link']:
-                links = [urljoin(base_url, a['href']) for a in soup.select(link_selector)]
+                generic_links = [urljoin(base_url, a['href']) for a in soup.select(link_selector)]
+                logger.info(f"🔍 Probando selector de enlaces genéricos: '{link_selector}' - Encontrados: {len(generic_links)}")
+                links.extend(generic_links)
                 if links:
                     break
         
         return list(dict.fromkeys(links))[:self.max_articles]
 
     def _parse_article(self, url: str) -> Optional[dict]:
-        """Parseo con tolerancia a fallos"""
+        """Parsear un artículo con múltiples estrategias"""
         try:
             soup = self._get_page(url)
             if not soup:
                 return None
 
-            # Título con 3 métodos diferentes
+            # Probar múltiples selectores para el título
             title = None
             for selector in SELECTORS['title']:
                 if elem := soup.select_one(selector):
                     title = elem.text.strip()
+                    logger.info(f"✅ Título encontrado con selector '{selector}': {title}")
                     break
 
-            # Contenido con 3 métodos
+            # Probar múltiples selectores para el contenido
             content = None
             for selector in SELECTORS['content']:
-                if elem := soup.select(selector):
-                    content = "\n".join([e.text.strip() for e in elem])
+                if elems := soup.select(selector):
+                    content = "\n".join([e.text.strip() for e in elems])
+                    logger.info(f"✅ Contenido encontrado con selector '{selector}'")
                     break
 
-            # Fecha con múltiples formatos
+            # Probar múltiples selectores para la fecha
             date = None
             for selector in SELECTORS['date']:
                 if elem := soup.select_one(selector):
                     date_str = elem.text.strip()
                     date = self._parse_date(date_str)
-                    if date:
-                        break
+                    logger.info(f"✅ Fecha encontrada con selector '{selector}': {date}")
+                    break
 
             return {
                 'title': title or "Título no encontrado",
@@ -148,6 +153,9 @@ class ContentScraper:
         logger.info(f"🚀 Iniciando scraping en: {base_url}")
         
         try:
+            logger.info("🔍 Verificando estructura del sitio web...")
+            logger.info(f"Usando selectores: {SELECTORS}")
+            
             soup = self._get_page(base_url)
             if not soup:
                 logger.error("❌ No se pudo obtener la página inicial")
@@ -183,10 +191,15 @@ class ContentScraper:
                         continue
                     
                     article_data = self._parse_article(url)
-                    if article_data and self.db.save_article(article_data):
-                        success_count += 1
+                    if article_data:
+                        logger.info(f"📥 Procesando artículo: {article_data['title']}")
+                        if self.db.save_article(article_data):
+                            success_count += 1
                     pbar.update(1)
                     time.sleep(random.uniform(0.5, 1.5))
+
+            if not article_urls:
+                logger.warning("⚠️ No se encontraron artículos en el sitio web.")
 
             logger.info(f"✅ Artículos nuevos guardados: {success_count}/{len(article_urls)}")
             return success_count > 0

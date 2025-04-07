@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Contacto</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/globals.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/header.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/footer.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/main.css') }}">
+</head>
+<body>
+    {% include 'header.html' %}
+    <main>
+        <h2>Contacto</h2>
+        <p>Si tienes alguna pregunta, no dudes en contactarnos a través de nuestro correo: contacto@bookingapp.com</p>
+    </main>
+    {% include 'footer.html' %}
+</body>
+</html>

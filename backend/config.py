@@ -1,71 +1,37 @@
 SELECTORS = {
-    # Contenedores de artículos (50+ patrones comunes)
     'articles': [
-        'article',  # HTML5 standard
-        '.post', '.entry', '.blog-post',  # WordPress
-        '.post-item', '.post-list-item',  # Jekyll/Ghost
-        '[itemprop="blogPost"]',  # Schema.org
-        '.story', '.card', '.content-item',  # CMS modernos
-        'div.post', 'div.article', 'div.entry-content',  # Generic
-        'li.post', 'li.entry',  # List-based blogs
-        'section.content', 'div.main-content',  # Estructuras genéricas
-        'div[class*="post"]', 'div[class*="entry"]'  # Patrones dinámicos
+        'article', 'div.post', '.post', '.entry', '.blog-post', '.post-item',
+        '.post-list-item', '[itemprop="blogPost"]', '.story', '.card',
+        '.content-item', 'div.article', 'div.entry-content', 'li.post',
+        'li.entry', 'section.content', 'div.main-content', 'div[class*="post"]',
+        'div[class*="entry"]'
     ],
-    
-    # Enlaces a artículos (20+ variantes)
     'article_link': [
-        'a.entry-title-link', 'a.post-title',
-        'h2 > a', 'h3 > a',  # Títulos como enlace
-        'a.more-link', 'a.read-more',  # Enlaces "Leer más"
-        'a[rel="bookmark"]',  # WordPress
-        'a.article-link', 'a.story-link',
-        'a[itemprop="url"]',  # Schema.org
-        'a.title-link', 'a.headline-link',
-        'div.post-header > a',  # Envuelto en div
-        'a[href*="/blog/"]', 'a[href*="/post/"]'  # Patrones de URL
+        'a.entry-title-link', 'a.post-title', 'h2 > a', 'h3 > a', 'a.more-link',
+        'a.read-more', 'a[rel="bookmark"]', 'a.article-link', 'a.story-link',
+        'a[itemprop="url"]', 'a.title-link', 'a.headline-link', 'div.post-header > a',
+        'a[href*="/blog/"]', 'a[href*="/post/"]'
     ],
-    
-    # Títulos (15+ patrones)
     'title': [
-        'h1', 'h1.entry-title', 'h1.post-title',  # WordPress/Jekyll
-        'h1[itemprop="headline"]',  # Schema.org
-        'header h1', 'div.post-header h1',
-        'title',  # Fallback extremo
-        '.post-title', '.entry-title', '.headline',
-        'h1.title', 'h1.blog-title'
+        'h1', 'h1.entry-title', 'h1.post-title', 'h1[itemprop="headline"]',
+        'header h1', 'div.post-header h1', 'title', '.post-title', '.entry-title',
+        '.headline', 'h1.title', 'h1.blog-title'
     ],
-    
-    # Contenido principal (20+ selectores)
     'content': [
-        'div.entry-content', 'div.post-content',  # WordPress
-        'div.article-body', 'div.content-area',  # CMS
-        '[itemprop="articleBody"]',  # Schema.org
-        'div.main-content', 'section.content',
-        'article > div',  # Estructura HTML5 común
-        'div.content', 'div.body-content',
-        'div.post-body', 'div.entry-text',
-        'div.rich-text', 'div#content'  # IDs comunes
+        'div.entry-content', 'div.post-content', 'div.article-body',
+        'div.content-area', '[itemprop="articleBody"]', 'div.main-content',
+        'section.content', 'article > div', 'div.content', 'div.body-content',
+        'div.post-body', 'div.entry-text', 'div.rich-text', 'div#content'
     ],
-    
-    # Fechas (15+ formatos)
     'date': [
-        'time.entry-date', 'span.post-date',  # WordPress
-        'time[datetime]',  # HTML5 datetime
-        'time.published', 'time.updated',  # Schema.org
-        'div.date', 'span.date',  # Clases genéricas
-        'meta[itemprop="datePublished"]',  # Meta tags
-        'div.timestamp', 'small.date',
-        'div.post-meta > time'  # En sección de metadatos
+        'time.entry-date', 'span.post-date', 'time[datetime]', 'time.published',
+        'time.updated', 'div.date', 'span.date', 'meta[itemprop="datePublished"]',
+        'div.timestamp', 'small.date', 'div.post-meta > time'
     ],
-    
-    # Paginación (10+ patrones)
     'next_page': [
-        'a.next', 'li.next > a',  # Clases comunes
-        'a.pagination-next',  # Nomenclatura estándar
-        'link[rel="next"]',  # HTML link header
-        'a[aria-label="Next"]',  # ARIA labels
-        'a:contains("Siguiente")', 'a:contains("Next")',  # Texto del enlace
-        'button.load-more'  # Paginación AJAX
+        'a.next', 'li.next > a', 'a.pagination-next', 'link[rel="next"]',
+        'a[aria-label="Next"]', 'a:contains("Siguiente")', 'a:contains("Next")',
+        'button.load-more'
     ]
 }
 

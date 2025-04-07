@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acerca de</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/globals.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/header.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/footer.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/main.css') }}">
+</head>
+<body>
+    {% include 'header.html' %}
+    <main>
+        <h2>Acerca de Booking App</h2>
+        <p>Booking App es una plataforma diseñada para ayudarte a gestionar tus reservas de manera eficiente.</p>
+    </main>
+    {% include 'footer.html' %}
+</body>
+</html>

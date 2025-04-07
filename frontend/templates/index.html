@@ -3,24 +3,30 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Home</title>
-    <!-- Incluye estilos globales -->
+    <title>Inicio</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/globals.css') }}">
-    <!-- Incluye estilos específicos de components/ui -->
-    <link rel="stylesheet" href="{{ url_for('static', filename='components/ui/styles.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='components/styles/main.css') }}">
 </head>
 <body>
     <header>
-        <h1>Bienvenido a la aplicación de Booking</h1>
+        <h1>Booking App</h1>
     </header>
     <main>
-        <p>Esta es una aplicación para gestionar tus reservas de manera eficiente.</p>
-        <button class="ui-button" onclick="alert('¡Bienvenido!')">Haz clic aquí</button>
+        <h2>Convierte tu blog en un libro educativo</h2>
+        <form id="blog-form">
+            <input type="url" id="blog-url" name="blog-url" placeholder="Ingresa el enlace de tu blog" required>
+            <button type="submit">Generar libro</button>
+        </form>
+        <div id="progress-container" class="hidden">
+            <div class="progress-bar">
+                <div class="progress"></div>
+            </div>
+        </div>
+        <div id="response-message"></div>
     </main>
     <footer>
-        <p>&copy; 2023 Booking App</p>
+        <p>&copy; 2025 Booking App</p>
     </footer>
-    <!-- Incluye scripts específicos de components/ui -->
     <script src="{{ url_for('static', filename='components/ui/scripts.js') }}"></script>
 </body>
 </html>
